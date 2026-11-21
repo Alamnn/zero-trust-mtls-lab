@@ -1,8 +1,13 @@
-# zero-trust-mtls-lab: Zero-Trust Service-to-Service Mutual TLS (mTLS) & PKI Lab
+# zero-trust-mtls-lab: Service-to-Service Mutual TLS (mTLS 1.3) & Internal PKI Lab
 
-**Problem:** Traditional perimeter security assumes internal east-west traffic between microservices (`gateway`, `auth-service`, `billing-api`) is trustworthy. In `modes/insecure/`, any container on the bridge network can query `billing-api` directly over plaintext HTTP and spoof caller headers (`X-Caller-Identity: spoofed-admin`). In `modes/hardened/`, strict **Mutual TLS (mTLS 1.3)** backed by a 2-tier internal PKI (**Root CA $\rightarrow$ Intermediate CA $\rightarrow$ 7-day leaf certificates**) requires cryptographic client & server authentication on every call.
+## Why I built this
+In many microservice architectures, TLS is terminated at the edge load balancer and internal services talk to each other over plain HTTP inside a shared VPC or Docker network, trusting headers like `X-Caller-Identity`. The problem is that if an attacker compromises any container on that internal network, they can sniff plaintext traffic and spoof internal headers to hit sensitive backend APIs directly.
 
-## Architecture Diagram
+I built this lab around three microservices (`gateway`, `auth-service`, and `billing-api`) to compare two deployable modes:
+1. **`modes/insecure/` (Plaintext HTTP)**: Services communicate over unencrypted HTTP with no client certificate checks. Anyone on the network can query `billing-api` directly with `X-Caller-Identity: spoofed-internal-admin` and dump customer invoices.
+2. **`modes/hardened/` (Strict Zero-Trust mTLS 1.3)**: Every service enforces **Mutual TLS 1.3 (`ssl.CERT_REQUIRED`)** backed by an internal 2-tier PKI (**Root CA -> Intermediate CA -> 7-day leaf certificates**) and checks the peer certificate's X.509 Common Name (`CN`) before returning data.
+
+## Architecture diagram
 
 ```text
 +-----------------------------------------------------------------------------------+
@@ -12,7 +17,7 @@
                                           |
        +----------------------------------+----------------------------------+
        |                                                                     |
-       vMode 1: modes/insecure/ (Plaintext HTTP)                             vMode 2: modes/hardened/ (Strict mTLS 1.3)
+       v Mode 1: modes/insecure/ (Plaintext HTTP)                            v Mode 2: modes/hardened/ (Strict mTLS 1.3)
 +-----------------------------------------+   +-----------------------------------------+
 | gateway (:9101)                         |   | gateway (:9201, CN=gateway)             |
 |   |-- HTTP GET /verify (No Auth)        |   |   |-- mTLS 1.3 + Client Cert CN=gateway |
@@ -25,26 +30,34 @@
 +-----------------------------------------+   +-----------------------------------------+
 ```
 
-## Before vs. After Zero-Trust Test Results (`tests/test_zero_trust.py`)
+## How I designed the PKI and identity checks
+1. **Two-tier CA hierarchy ([scripts/setup_pki.sh](scripts/setup_pki.sh))**:
+   Rather than signing workload certificates directly with the Root CA, `setup_pki.sh` generates a 4096-bit offline Root CA (`root-ca.crt`) and signs a 4096-bit Intermediate Microservice CA (`intermediate-ca.crt`) with `basicConstraints = critical, CA:TRUE, pathlen:0`. Setting `pathlen:0` ensures that even if the Intermediate CA were compromised, it cannot issue another subordinate CA.
+2. **Short-lived leaf certificates & rotation ([scripts/rotate_certs.sh](scripts/rotate_certs.sh))**:
+   Each service (`gateway`, `auth-service`, `billing-api`) receives a 7-day certificate with `extendedKeyUsage = serverAuth, clientAuth` and Subject Alternative Names (`DNS:<service>, DNS:localhost, IP:127.0.0.1`). Running `scripts/rotate_certs.sh` issues fresh serial numbers under the Intermediate CA without touching the Root CA.
+3. **Authentication + CN Authorization ([services/microservices.py](services/microservices.py))**:
+   Verifying that a certificate chains up to `ca-chain.crt` only proves the caller is *some* container in the cluster. Inside `BillingHandler` and `AuthHandler`, I also inspect `self.connection.getpeercert()` to verify that the caller's X.509 `commonName` is explicitly authorized (`cn in ("gateway", "auth-service")`), binding identity to the certificate instead of an HTTP header.
 
-| Test Scenario | `modes/insecure/` (Plaintext HTTP) | `modes/hardened/` (Strict mTLS 1.3) | Security Outcome |
+## Verification results (`make test`)
+My integration test suite ([tests/test_zero_trust.py](tests/test_zero_trust.py)) and wire-capture proof ([scripts/capture_proof.sh](scripts/capture_proof.sh)) verify four scenarios:
+
+| Test Case | `modes/insecure/` (Plaintext HTTP) | `modes/hardened/` (Strict mTLS 1.3) | What happens under the hood |
 |---|---|---|---|
-| Direct call to `billing-api` without client cert | `200 OK` (Exposes `INV-9001`) | **`SSLError: TLSV13_ALERT_CERTIFICATE_REQUIRED`** | Unauthenticated east-west traffic blocked at TLS handshake |
-| Direct call with spoofed `X-Caller-Identity` header | `200 OK` (`spoofed-internal-admin` trusted) | **Blocked (Identity bound to X.509 `CN`)** | Header spoofing neutralized by cryptographic X.509 identity |
-| Call with rogue self-signed `CN=billing-api` cert | N/A | **`SSLError: UNKNOWN_CA`** | Untrusted certificates rejected by Intermediate CA chain check |
-| Authorized `gateway` $\rightarrow$ `auth` & `billing` mTLS call | `200 OK` (Cleartext on wire) | **`200 OK` (`mTLS-Verified:gateway`, TLS 1.3 AEAD)** | Cryptographically authenticated and encrypted in transit |
+| Direct request to `billing-api` without a client cert | `200 OK` (Leaks invoice `INV-9001`, `$48,500`) | **Rejected (`SSLError: CERTIFICATE_REQUIRED`)** | TLS 1.3 handshake aborts before any HTTP bytes are processed |
+| Direct request with `X-Caller-Identity: spoofed-internal-admin` | `200 OK` (`authenticated_caller: spoofed-internal-admin`) | **Blocked** | Hardened mode ignores `X-Caller-Identity` and reads identity from `peercert` `CN` |
+| Request presenting an untrusted self-signed `rogue.crt` (`CN=billing-api`) | N/A | **Rejected (`SSLError: UNKNOWN_CA`)** | Rejected because `rogue.crt` is not signed by `intermediate-ca.crt` |
+| Valid `gateway` -> `auth-service` + `billing-api` mTLS call | `200 OK` (Cleartext JSON on wire) | **`200 OK` (`mTLS-Verified:gateway`)** | Negotiates `TLSv1.3` / `TLS_AES_256_GCM_SHA384` (256-bit AEAD ciphertext) |
 
-## Visual Proof
-
+### Automated PKI setup, pytest, wire proof, and rotation output
 ![mtls](docs/screenshots/01_zero_trust_mtls.png)
 
-## Quick Start & Makefile Usage
-
+## How to run it
 ```bash
-# 1. Generate 2-tier PKI, validate Docker configs, run pytest suite, wire proof, and cert rotation
+# Run PKI generation, Docker Compose validation, pytest suite, wire proof, and cert rotation
 make test
 
-# 2. Launch either deployable mode via Docker Compose
+# Or launch either mode via Docker Compose
 make up-insecure
 make up-hardened
+make down
 ```
