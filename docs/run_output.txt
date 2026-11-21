@@ -15,14 +15,14 @@ serial=3873A279CDA61420DDABA297C575FCA1D62A6177
 subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=billing-api
 notBefore=Nov 21 17:37:37 2026 GMT
 notAfter=Nov 28 17:37:37 2026 GMT
-[+] PKI setup complete in /Users/amin/CyberSecurity/zero-trust-mtls-lab/certs
+[+] PKI setup complete in /Users/amin/Documents/Projects/CyberSecurity/zero-trust-mtls-lab/certs
 docker compose -f modes/insecure/docker-compose.yml config -q
 docker compose -f modes/hardened/docker-compose.yml config -q
 python3 -m pytest -v tests/test_zero_trust.py
 ============================= test session starts ==============================
 platform darwin -- Python 3.14.3, pytest-9.2.0, pluggy-1.7.0 -- /Library/Frameworks/Python.framework/Versions/3.14/bin/python3
 cachedir: .pytest_cache
-rootdir: /Users/amin/CyberSecurity/zero-trust-mtls-lab
+rootdir: /Users/amin/Documents/Projects/CyberSecurity/zero-trust-mtls-lab
 plugins: anyio-4.14.2
 collecting ... collected 2 items
 
@@ -71,7 +71,7 @@ serial=3873A279CDA61420DDABA297C575FCA1D62A617A
 subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=billing-api
 notBefore=Nov 21 17:37:41 2026 GMT
 notAfter=Nov 28 17:37:41 2026 GMT
-[+] PKI setup complete in /Users/amin/CyberSecurity/zero-trust-mtls-lab/certs
+[+] PKI setup complete in /Users/amin/Documents/Projects/CyberSecurity/zero-trust-mtls-lab/certs
 === After Rotation: New billing-api Certificate Serial ===
 serial=3873A279CDA61420DDABA297C575FCA1D62A617A
 notBefore=Nov 21 17:37:41 2026 GMT
