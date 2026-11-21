@@ -1,0 +1,43 @@
+name: zero-trust-hardened
+
+services:
+  auth-service:
+    image: python:3.12-slim
+    container_name: zt-hardened-auth
+    working_dir: /app
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../certs:/app/certs:ro
+    command: ["python3", "-c", "from http.server import HTTPServer; from services.microservices import AuthHandler, make_mtls_context; AuthHandler.mode='hardened'; s=HTTPServer(('0.0.0.0', 9202), AuthHandler); s.socket=make_mtls_context('/app/certs','auth-service',True).wrap_socket(s.socket,server_side=True); s.serve_forever()"]
+    networks:
+      zt_mtls_net:
+
+  billing-api:
+    image: python:3.12-slim
+    container_name: zt-hardened-billing
+    working_dir: /app
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../certs:/app/certs:ro
+    ports:
+      - "9203:9203"
+    command: ["python3", "-c", "from http.server import HTTPServer; from services.microservices import BillingHandler, make_mtls_context; BillingHandler.mode='hardened'; s=HTTPServer(('0.0.0.0', 9203), BillingHandler); s.socket=make_mtls_context('/app/certs','billing-api',True).wrap_socket(s.socket,server_side=True); s.serve_forever()"]
+    networks:
+      zt_mtls_net:
+
+  gateway:
+    image: python:3.12-slim
+    container_name: zt-hardened-gateway
+    working_dir: /app
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../certs:/app/certs:ro
+    ports:
+      - "9201:9201"
+    command: ["python3", "-c", "from http.server import HTTPServer; from services.microservices import GatewayHandler, make_mtls_context; GatewayHandler.mode='hardened'; GatewayHandler.cert_dir='/app/certs'; GatewayHandler.auth_url='https://auth-service:9202/verify'; GatewayHandler.billing_url='https://billing-api:9203/v1/invoices'; s=HTTPServer(('0.0.0.0', 9201), GatewayHandler); s.socket=make_mtls_context('/app/certs','gateway',True).wrap_socket(s.socket,server_side=True); s.serve_forever()"]
+    networks:
+      zt_mtls_net:
+
+networks:
+  zt_mtls_net:
+    driver: bridge

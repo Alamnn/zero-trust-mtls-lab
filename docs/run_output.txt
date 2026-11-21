@@ -1,0 +1,78 @@
+bash scripts/setup_pki.sh
+[*] Generating Zero-Trust Internal Root CA and Intermediate CA...
+[*] Issuing short-lived (7-day) mTLS certificate for service: gateway...
+serial=3873A279CDA61420DDABA297C575FCA1D62A6175
+subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=gateway
+notBefore=Nov 21 17:37:37 2026 GMT
+notAfter=Nov 28 17:37:37 2026 GMT
+[*] Issuing short-lived (7-day) mTLS certificate for service: auth-service...
+serial=3873A279CDA61420DDABA297C575FCA1D62A6176
+subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=auth-service
+notBefore=Nov 21 17:37:37 2026 GMT
+notAfter=Nov 28 17:37:37 2026 GMT
+[*] Issuing short-lived (7-day) mTLS certificate for service: billing-api...
+serial=3873A279CDA61420DDABA297C575FCA1D62A6177
+subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=billing-api
+notBefore=Nov 21 17:37:37 2026 GMT
+notAfter=Nov 28 17:37:37 2026 GMT
+[+] PKI setup complete in /Users/amin/CyberSecurity/zero-trust-mtls-lab/certs
+docker compose -f modes/insecure/docker-compose.yml config -q
+docker compose -f modes/hardened/docker-compose.yml config -q
+python3 -m pytest -v tests/test_zero_trust.py
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.2.0, pluggy-1.7.0 -- /Library/Frameworks/Python.framework/Versions/3.14/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/amin/CyberSecurity/zero-trust-mtls-lab
+plugins: anyio-4.14.2
+collecting ... collected 2 items
+
+tests/test_zero_trust.py::test_insecure_mode_allows_unauthenticated_and_spoofed_headers PASSED [ 50%]
+tests/test_zero_trust.py::test_hardened_mtls_mode_rejects_unauthenticated_and_rogue_certs_and_allows_valid_mtls PASSED [100%]
+
+=============================== warnings summary ===============================
+../../../../Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/anyio/pytest_plugin.py:14
+  /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/anyio/pytest_plugin.py:14: PytestRemovedIn10Warning: _pytest.python.CallSpec2 has been renamed to CallSpec.
+  The CallSpec2 alias will be removed in pytest 10.
+  Update imports to use CallSpec instead.
+  See https://docs.pytest.org/en/stable/deprecations.html#callspec2-renamed
+    from _pytest.python import CallSpec2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 2 passed, 1 warning in 1.84s =========================
+bash scripts/capture_proof.sh
+=== 1. Wire Capture Proof: Insecure Mode (Plaintext HTTP on TCP :19103) ===
+TCP Payload Visible in Cleartext on Bridge Network:
+  GET /v1/invoices HTTP/1.1
+  X-Caller-Identity: spoofed-admin
+  HTTP/1.0 200 OK -> {"service": "billing-api", "mode": "insecure", "authenticated_caller": "spoofed-admin", "invoices": [{"id": "INV-9001", "amount_usd": 48500, "card_last4": "4242"}]}
+
+=== 2. Wire Capture Proof: Hardened Mode (Mutual TLS 1.3 on TCP :19203) ===
+TLS Handshake Negotiated : TLSv1.3 / Cipher: TLS_AES_256_GCM_SHA384 (256-bit)
+Server Cert Verified     : CN=billing-api (Signed by ZeroTrust Intermediate Microservice CA)
+Client Cert Presented    : CN=gateway (Mutual TLS CERT_REQUIRED enforced)
+Wire Payload Inspection  : [TLS 1.3 ContentType=23 Application Data - AEAD Encrypted Ciphertext]
+bash scripts/rotate_certs.sh
+=== Before Rotation: Current billing-api Certificate Serial ===
+serial=3873A279CDA61420DDABA297C575FCA1D62A6177
+notBefore=Nov 21 17:37:37 2026 GMT
+notAfter=Nov 28 17:37:37 2026 GMT
+[*] Issuing short-lived (7-day) mTLS certificate for service: gateway...
+serial=3873A279CDA61420DDABA297C575FCA1D62A6178
+subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=gateway
+notBefore=Nov 21 17:37:40 2026 GMT
+notAfter=Nov 28 17:37:40 2026 GMT
+[*] Issuing short-lived (7-day) mTLS certificate for service: auth-service...
+serial=3873A279CDA61420DDABA297C575FCA1D62A6179
+subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=auth-service
+notBefore=Nov 21 17:37:40 2026 GMT
+notAfter=Nov 28 17:37:40 2026 GMT
+[*] Issuing short-lived (7-day) mTLS certificate for service: billing-api...
+serial=3873A279CDA61420DDABA297C575FCA1D62A617A
+subject=C=US, O=ZeroTrustLab, OU=Microservices, CN=billing-api
+notBefore=Nov 21 17:37:41 2026 GMT
+notAfter=Nov 28 17:37:41 2026 GMT
+[+] PKI setup complete in /Users/amin/CyberSecurity/zero-trust-mtls-lab/certs
+=== After Rotation: New billing-api Certificate Serial ===
+serial=3873A279CDA61420DDABA297C575FCA1D62A617A
+notBefore=Nov 21 17:37:41 2026 GMT
+notAfter=Nov 28 17:37:41 2026 GMT

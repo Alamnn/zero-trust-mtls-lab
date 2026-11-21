@@ -1,0 +1,11 @@
+=== 1. Wire Capture Proof: Insecure Mode (Plaintext HTTP on TCP :19103) ===
+TCP Payload Visible in Cleartext on Bridge Network:
+  GET /v1/invoices HTTP/1.1
+  X-Caller-Identity: spoofed-admin
+  HTTP/1.0 200 OK -> {"service": "billing-api", "mode": "insecure", "authenticated_caller": "spoofed-admin", "invoices": [{"id": "INV-9001", "amount_usd": 48500, "card_last4": "4242"}]}
+
+=== 2. Wire Capture Proof: Hardened Mode (Mutual TLS 1.3 on TCP :19203) ===
+TLS Handshake Negotiated : TLSv1.3 / Cipher: TLS_AES_256_GCM_SHA384 (256-bit)
+Server Cert Verified     : CN=billing-api (Signed by ZeroTrust Intermediate Microservice CA)
+Client Cert Presented    : CN=gateway (Mutual TLS CERT_REQUIRED enforced)
+Wire Payload Inspection  : [TLS 1.3 ContentType=23 Application Data - AEAD Encrypted Ciphertext]

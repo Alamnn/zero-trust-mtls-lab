@@ -1,0 +1,40 @@
+name: zero-trust-insecure
+
+services:
+  auth-service:
+    image: python:3.12-slim
+    container_name: zt-insecure-auth
+    working_dir: /app
+    volumes:
+      - ../../services:/app/services:ro
+    command: ["python3", "-c", "from http.server import HTTPServer; from services.microservices import AuthHandler; HTTPServer(('0.0.0.0', 9102), AuthHandler).serve_forever()"]
+    networks:
+      zt_net:
+
+  billing-api:
+    image: python:3.12-slim
+    container_name: zt-insecure-billing
+    working_dir: /app
+    volumes:
+      - ../../services:/app/services:ro
+    ports:
+      - "9103:9103"
+    command: ["python3", "-c", "from http.server import HTTPServer; from services.microservices import BillingHandler; HTTPServer(('0.0.0.0', 9103), BillingHandler).serve_forever()"]
+    networks:
+      zt_net:
+
+  gateway:
+    image: python:3.12-slim
+    container_name: zt-insecure-gateway
+    working_dir: /app
+    volumes:
+      - ../../services:/app/services:ro
+    ports:
+      - "9101:9101"
+    command: ["python3", "-c", "from http.server import HTTPServer; from services.microservices import GatewayHandler; GatewayHandler.auth_url='http://auth-service:9102/verify'; GatewayHandler.billing_url='http://billing-api:9103/v1/invoices'; HTTPServer(('0.0.0.0', 9101), GatewayHandler).serve_forever()"]
+    networks:
+      zt_net:
+
+networks:
+  zt_net:
+    driver: bridge
